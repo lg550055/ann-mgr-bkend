@@ -1,8 +1,12 @@
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+import os
 
-SECRET_KEY = "your-secret-key" # Change this to a strong, random key
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY", "default_key")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 90
 
