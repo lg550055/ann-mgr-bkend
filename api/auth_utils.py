@@ -20,9 +20,7 @@ def create_access_token(data: dict):
 
 def decode_access_token(token: str):
     try:
-        print("--------s Starting token decoding: " + token)
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        print("--------s Token decoding completed")
         email = payload.get("sub")
         return email
     except JWTError as err:

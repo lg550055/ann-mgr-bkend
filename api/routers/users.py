@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from api.auth_utils import decode_access_token,get_password_hash
+from api.auth_utils import decode_access_token, get_password_hash
 from api.database import get_db
 from api.models import UserCreate, UserOut
 from api.schemas import User
@@ -32,19 +32,12 @@ def get_current_user(
         raise HTTPException(status_code=400, detail="Inactive user")
     return user
 
-
 @router.get("/", response_model=List[UserOut])
 def get_all_users(
     db: Session = Depends(get_db),
     _cur_user: User = Depends(get_current_user),
 ):
     return db.query(User).all()
-
-
-@router.get("/me", response_model=UserOut)
-def read_users_me(current_user: User = Depends(get_current_user)):
-    return current_user
-
 
 @router.post("/register", response_model=UserOut)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
@@ -61,3 +54,30 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     return new_user
+
+@router.get("/me", response_model=UserOut)
+def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@router.delete("/{email}", status_code=204)
+def delete_user(
+    email: str,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+):
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
+    return None  # 204 No Content
+
+@router.put("/me/deactivate", response_model=UserOut)
+def deactivate_own_user(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_user.disabled = True
+    db.commit()
+    db.refresh(current_user)
+    return current_user
