@@ -4,11 +4,12 @@ from typing import Optional
 
 class User(BaseModel):
     email: EmailStr
+
+class UserCreate(User):
+    password: str
+
+class UserOut(User):
     disabled: Optional[bool] = None
 
-class UserInDB(User):
-    hashed_password: str
-
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str
+    class Config:
+        orm_mode = True

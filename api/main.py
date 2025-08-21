@@ -1,39 +1,86 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-
-from api.models import UserInDB, UserCreate, User
+from sqlalchemy.orm import Session
+from typing import List
+from . import database
+from api.models import UserCreate, UserOut
 from api.auth_utils import create_access_token, decode_access_token, verify_password, get_password_hash
+from api.schemas import Base, User
 
 app = FastAPI()
 
-fake_users_db = {}
+Base.metadata.create_all(bind=database.engine)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(database.get_db)
+):
+    creds_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    email = decode_access_token(token)
+    if email is None:
+        raise creds_exception
+
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise creds_exception
+    if user.disabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive user"
+        )
+    return user
+
 @app.get("/")
-async def health_check():
+def health_check():
     return {"status": "ok"}
 
-@app.post("/user/register", response_model=User)
-async def register_user(user: UserCreate):
-    if user.email in fake_users_db:
+@app.get("/users/", response_model=List[UserOut])
+def get_all_users(
+    db: Session = Depends(database.get_db),
+    _cur_user: User = Depends(get_current_user),  # require auth
+):
+    users = db.query(User).all()
+    return users
+
+@app.get("/users/me", response_model=UserOut)
+def read_users_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+@app.post("/user/register", response_model=UserOut)
+def register_user(user: UserCreate, db: Session = Depends(database.get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
+    if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="email already registered"
         )
-    hashed_password = get_password_hash(user.password)
 
-    fake_users_db[user.email] = {
-        "email": user.email,
-        "hashed_password": hashed_password,
-        "disabled": False
-    }
-    return User(email=user.email, disabled=False)
+    new_user = User(
+        email=user.email,
+        hashed_password=get_password_hash(user.password),
+        disabled=False
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
 
 @app.post("/token")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = fake_users_db.get(form_data.username)
-    if not user or not verify_password(form_data.password, user['hashed_password']):
+def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(database.get_db)
+):
+    db_user = db.query(User).filter(User.email == form_data.username).first()
+
+    if not db_user or not verify_password(form_data.password, db_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
